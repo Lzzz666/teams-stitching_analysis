@@ -55,13 +55,19 @@ def get_seperated_color_bar_rgb(image, masks):
     for color, mask in masks.items():
         image_color = cv2.bitwise_and(image, image, mask=mask)
         _, thresh = cv2.threshold(image_color, 10, 255, cv2.THRESH_BINARY)
-        center_line_points = []
+        center_line_points = []  # 中線 (取平均值)
+        upper_line_points = []   # 上緣 (取最小 y)
         for x in range(thresh.shape[1]):
             y_coords = np.where(thresh[:, x] == 255)[0]
             
             if len(y_coords) > 0:
+                # 1. 中線位置
                 y_mid = int(np.mean(y_coords))
                 center_line_points.append((x, y_mid))
+
+                # 2. 上緣位置 (最小 y，即色條最上方)
+                y_top = int(np.min(y_coords))
+                upper_line_points.append((x, y_top))
 
         distances = [] # x 軸: 距離 (直接使用 x 座標)
         blue_channel = []
@@ -78,7 +84,35 @@ def get_seperated_color_bar_rgb(image, masks):
                 green_channel.append(image_color[center_line_points[i][1], center_line_points[i][0], 1])
                 red_channel.append(image_color[center_line_points[i][1], center_line_points[i][0], 2])
 
-                cv2.line(image, center_line_points[i], center_line_points[i+1], (255, 0, 0), 2)
+        # Draw upper-edge rough preview (optional)
+        if len(upper_line_points) > 1:
+            for i in range(len(upper_line_points) - 1):
+                cv2.line(image, upper_line_points[i], upper_line_points[i+1], (0, 200, 0), 1)
+
+        # --- Smooth approximation of the upper edge ---------------------------------
+        if len(upper_line_points) >= 4:
+            pts = np.array(upper_line_points)
+            x_pts, y_pts = pts[:, 0], pts[:, 1]
+
+            # Choose polynomial degree: quadratic for few points, quartic for more
+            degree = 4 if len(pts) > 6 else 2
+            coeffs = np.polyfit(x_pts, y_pts, degree)
+
+            # Generate dense x-coordinates and evaluate polynomial for smooth y
+            x_dense = np.linspace(x_pts.min(), x_pts.max(), max(100, len(x_pts) * 3))
+            y_dense = np.polyval(coeffs, x_dense)
+
+            smooth_curve = np.stack((x_dense, y_dense), axis=-1).astype(np.int32).reshape((-1, 1, 2))
+            cv2.polylines(image, [smooth_curve], isClosed=False, color=(0, 255, 0), thickness=2)
+
+        # plot 出 上緣逼近的值，也 plot 出原始的上緣值 比較兩條差異
+
+        # 畫出上緣逼近的值，也 plot 出原始的上緣值 比較兩條差異
+        plt.plot(x_pts, y_pts, '-', label='Original Points', color='red')
+        plt.plot(x_dense, y_dense, 'b-', label='Smoothed Curve')
+        plt.legend()
+        plt.show()
+
         # 在同一個 Figure 中使用三個子圖（由上到下分別畫 R、G、B）
         fig, (ax_r, ax_g, ax_b) = plt.subplots(3, 1, sharex=True, figsize=(15, 10))
         fig.suptitle('RGB value comparison of the left and right lines', fontsize=16, fontweight='bold')

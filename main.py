@@ -22,6 +22,11 @@ def main():
     get_seperated_color_bar_rgb(roi, masks)
     get_seperated_edges(roi_gray,masks)
 
+    #TODO : 計算色差
+
+    #TODO : 計算亮度差
+
+    #TODO : 計算 edge
 
 if __name__ == "__main__":
     main() 
